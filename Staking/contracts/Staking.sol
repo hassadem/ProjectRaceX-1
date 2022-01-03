@@ -5,7 +5,6 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts/utils/math/Math.sol";
 
 /**
  * @title RWX Staking Contract: Stake and Unstake Tokens
@@ -34,10 +33,10 @@ contract Staking is Ownable {
   }
 
   // Staking event
-  event StakeAmount(address indexed account, uint256 amount, uint256 timestamp);
+  event StakeToken(address indexed account, uint256 amount, uint256 timestamp);
 
   // Unstaking event
-  event UnStakeAmount (address indexed account, uint256 amount, uint256 timestamp);
+  event UnStakeToken(address indexed account, uint256 amount, uint256 timestamp);
   event SetRewardRate(uint256 indexed rewardRate);
 
   /**
@@ -49,10 +48,11 @@ contract Staking is Ownable {
     address _token,
     uint256 _rewardRate
   ) {
+    require(_token != address(0), "INVALID_TOKEN_ADDRESS");
     token = ERC20(_token);
     rewardRate = _rewardRate;
-    endPeriod = block.timestamp + duration;
-    nextEndPeriod = endPeriod + duration;
+    endPeriod = block.timestamp + duration;  // rewardRate reset every 3 months
+    nextEndPeriod = endPeriod + duration; 
   }
 
   /**
@@ -68,7 +68,7 @@ contract Staking is Ownable {
 
   /**
    * @notice Stake tokens for own account
-   * @param amount uint256
+   * @param amount uint256 - amount of RWX token; token holder needs to approve token before staking
    */
   function stake(uint256 amount) external {
       _stake(msg.sender, amount);
@@ -81,13 +81,13 @@ contract Staking is Ownable {
   function unstake(uint256 amount) external {
     _unstake(msg.sender, amount);
     token.transfer(msg.sender, amount);
-    emit UnStakeAmount(msg.sender, amount, block.timestamp);
+    emit UnStakeToken(msg.sender, amount, block.timestamp);
   }
 
   /**
    * @notice Receive stakes for an account
    * @param account address 
-   * @return accountStake - consisting of balance and timestamp
+   * @return accountStake - consisting of stake balance (without reward) and timestamp
    */
   function getStakes(address account)
     external
@@ -105,14 +105,14 @@ contract Staking is Ownable {
   }
 
   /**
-   * @notice Balance of an account (ERC-20)
+   * @notice Staking balance of an account (ERC-20) including reward
    */
-  function balanceOf(address account)
+  function stakeBalanceOf(address account)
     external
     view
     returns (uint256 total)
   {
-    return stakes[account].balance;
+    return available(account);
   }
 
   /**
@@ -138,47 +138,65 @@ contract Staking is Ownable {
   function available(address account) public view returns (uint256) {
     Stake storage selected = stakes[account];
     uint256 year = 365*24*60*60; // 365 days * 24 hours * 60 min * 60 sec
-    uint256 stakeDuration = block.timestamp.sub(selected.timestamp);    
-    if(selected.balance==0) {
-      return 0;
+    uint256 stakeDuration;
+    if( block.timestamp > selected.timestamp) {
+      stakeDuration = block.timestamp.sub(selected.timestamp);   
+    } else {
+      stakeDuration = 0;  
+    }
+    uint256 rewardAmount;
+    // to save gas, calculation is not needed if one of the numerator is zero 
+    if(selected.balance == 0 || rewardRate == 0 || stakeDuration == 0) {
+      rewardAmount = 0;
+      return selected.balance;
     } else {
       // calculate reward amount = (balance * rewardRate * stakeDuration)/ (100*year)
-      uint256 rewardAmount = (selected.balance.mul(rewardRate).mul(stakeDuration))
+      rewardAmount = (selected.balance.mul(rewardRate).mul(stakeDuration))
         .div(year.mul(100));
       return selected.balance + rewardAmount;
     }
   }
 
   /**
-   * @notice Stake tokens for an account
-   * @param account address
-   * @param amount uint256
+   * @notice Stake tokens for an account, tokenholder has to approve the amount first
+   * @param account address - tokenholder 
+   * @param amount uint256 - amount of RWX token
    */
   function _stake(address account, uint256 amount) internal {
+    require(account != address(0), "ADDRESS_INVALID");
     require(amount > 0, "AMOUNT_INVALID");
+    // token holder cannot stake more than the amount held
     require(token.balanceOf(account)>= amount, "INSUFFICIENT_BALANCE");
+    
+    Stake storage selected = stakes[account];
 
-    if (stakes[account].balance == 0) {
+    if (selected.balance == 0) {
       // update the balance if initial amount is 0
-      stakes[account].balance = amount;
-      stakes[account].timestamp = block.timestamp;
+      selected.balance = amount;
+      selected.timestamp = block.timestamp;
     } else {
       // else update the balance with staking reward + new staking amount
-      stakes[account].balance = available(account).add(amount);
-      stakes[account].timestamp = block.timestamp;      
+      selected.balance = available(account).add(amount);
+      selected.timestamp = block.timestamp;      
     }
-    token.safeTransferFrom(msg.sender, address(this), amount);
-    emit StakeAmount (account, amount, stakes[account].timestamp);
+    //transfer tokens from tokenholder to this contract - tokenholder has to approve the amount first
+    token.safeTransferFrom(account, address(this), amount);
+    emit StakeToken (account, amount, stakes[account].timestamp);
   }
 
   /**
    * @notice Update the balance of amount staked based on withdrawal
-   * @param account address
-   * @param amount uint256
+   * @param account address - tokenholder 
+   * @param amount uint256 - amount of RWX token
    */
   function _unstake(address account, uint256 amount) internal {
-    Stake storage selected = stakes[account];
+    require(account != address(0), "ADDRESS_INVALID");
+    require(amount > 0, "AMOUNT_INVALID");
     require(amount <= available(account), "AMOUNT_EXCEEDS_AVAILABLE");
+
+    Stake storage selected = stakes[account];
+    
     selected.balance = selected.balance.sub(amount);
   }
+
 }
