@@ -14,8 +14,6 @@ contract RacewayXredistribution is Ownable {
     uint256 private nftHolderShare = 60;
     uint256 private nftCharityShare = 20;
 
-    uint256 public share;
-
     constructor (address[] memory _holder, address[] memory _admin, address[] memory _charity, address _token) {
         holder = _holder;
         admin = _admin;
@@ -37,7 +35,7 @@ contract RacewayXredistribution is Ownable {
     function setCharity (address _charity) external onlyOwner{
         charity.push(_charity);
     }
-    //removable function for all address
+    // remove NFTHolder function 
     function removeHolder (address _holder) external onlyOwner {
         uint deleteIndex; 
         // find out the index of the target address
@@ -86,7 +84,7 @@ contract RacewayXredistribution is Ownable {
         admin.pop();
     }
 
-    // set the NFT holder share of RWX token deposited
+    // set the NFT holder and charity share of RWX token deposited
     function setNFTShare(uint256 _holderShare, uint256 _charityShare) external onlyOwner {
         require((_holderShare + _charityShare) <= 100, "INVALID");
         nftHolderShare = _holderShare;
