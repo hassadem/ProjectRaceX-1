@@ -13,6 +13,7 @@ contract RacewayXredistribution is Ownable {
     ERC20 private RWX;
     uint256 private nftHolderShare = 60;
     uint256 private nftCharityShare = 20;
+    event Deposit(address indexed payer, uint256 amount);
 
     constructor (address[] memory _holder, address[] memory _admin, address[] memory _charity, address _token) {
         holder = _holder;
@@ -134,6 +135,7 @@ contract RacewayXredistribution is Ownable {
         if (100 - nftHolderShare - nftCharityShare >=0 && RWX.balanceOf(address(this))>=0) {
             RWX.transfer(Ownable.owner(), amount * (100 - nftHolderShare - nftCharityShare)/100);
         }
+        emit Deposit(msg.sender, amount);
         return true;
     }
 
